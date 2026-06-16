@@ -17,7 +17,7 @@ async def prep_inputs(dut, op, a, b, expected, name):
     dut.operation.value = op
     dut.operand_A.value = a
     dut.operand_B.value = b
-    await Timer(5, units="ns")
+    await Timer(5, unit="ns")
     result = int(dut.ALU_out.value)
     assert result == expected & 0xFFFFFFFF, \
         f"{name}({a}, {b}): expected {expected & 0xFFFFFFFF}, got {result}"
