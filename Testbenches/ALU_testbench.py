@@ -27,13 +27,13 @@ async def prep_inputs(dut, op, a, b, expected, name):
 async def ALU_testADD(dut):
     await reset_dut(dut)
     await prep_inputs(dut, ADD, 10, 5, 15, "ADD")
-    await prep_inputs(dut, ADD, 0xFFFFFFFF, 1, 0, "ADD overflow")
+    await prep_inputs(dut, ADD, 0xFFFF, 1, 0, "ADD overflow")
 
 @cocotb.test()
 async def ALU_testSUB(dut):
     await reset_dut(dut)
     await prep_inputs(dut, SUB, 10, 5, 5, "SUB")
-    await prep_inputs(dut, SUB, 0, 1, 0xFFFFFFFF, "SUB underflow")
+    await prep_inputs(dut, SUB, 0, 1, 0xFFFF, "SUB underflow")
 
 @cocotb.test()
 async def ALU_testDIV(dut):
@@ -46,13 +46,13 @@ async def ALU_testDIV(dut):
 async def ALU_testMUL(dut):
     await reset_dut(dut)
     await prep_inputs(dut, MUL, 50, 2, 100, "MUL")
-    await prep_inputs(dut, MUL, 3000000000, 2, 1705032704, "MUL overflow")
+    await prep_inputs(dut, MUL, 40000, 2, 14464, "MUL overflow")
 
 @cocotb.test()
 async def ALU_testRESET(dut):
     dut.reset.value = 1
     await Timer(5, unit="ns")
     result = int(dut.ALU_out.value)
-    assert result == 0x00000000 & 0xFFFFFFFF, \
-        f"RESET(NA, NA): expected {0x00000000 & 0xFFFFFFFF}, got {result}"
+    assert result == 0x0000 & 0xFFFF, \
+        f"RESET(NA, NA): expected {0x0000 & 0xFFFF}, got {result}"
     cocotb.log.info(f"PASS  RESET(NA, NA) = {result}")

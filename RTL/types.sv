@@ -1,5 +1,5 @@
 
-typedef enum logic [7:0]
+typedef enum logic [3:0]
 {
     NOP = 8'h00,
     ADD = 8'h01,
