@@ -8,5 +8,6 @@ typedef enum logic [3:0]
     DIV = 8'h04,
     STR = 8'h05,
     LDR = 8'h06,
-    RET = 8'h07
+    RET = 8'h07,
+    MOV = 8'h08
 } opcodes_t;

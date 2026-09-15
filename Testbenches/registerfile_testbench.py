@@ -6,14 +6,13 @@ from cocotb.triggers import RisingEdge
 @cocotb.test()
 async def RF_StoreAndRetrieve(dut):
     cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
-    dut.we.value = 1
-    dut.addr.value = 0
-    dut.dataIn.value = 0b1010101010101010
+    dut.operation.value = 0b01
+    dut.rd_addr.value = 0
+    dut.imm16.value = 0b1010101010101010
     await Timer(10, unit="ns")
-    dut.we.value = 0
-    dut.addr.value = 0
+    dut.operation.value = 0b00
     await Timer(10, unit="ns")
-    result = dut.data.value
+    result = dut.rs.value
 
     assert result == 43690 & 0xFFFF, \
         f"SNR): expected {43690 & 0xFFFF}, got {result}"
