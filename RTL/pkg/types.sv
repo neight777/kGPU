@@ -1,15 +1,26 @@
 package kpgu_pkg;
-    typedef enum logic [7:0]
+    typedef enum logic [5:0]
     {
-        NOP = 8'h00,
-        ADD = 8'h01,
-        SUB = 8'h02,
-        MUL = 8'h03,
-        DIV = 8'h04,
-        STR = 8'h05,
-        LDR = 8'h06,
-        RET = 8'h07,
-        MOV = 8'h08
+        NOP,
+        ADD,
+        SUB,
+        MUL,
+        DIV,
+        STR,
+        LDR,
+        RET,
+        MOV,
+        BEQ,
+        BNE,
+        BLT,
+        B
     } opcodes_t;
+
+    typedef struct packed {
+        opcodes_t    op;    //[31:26]
+        logic [4:0]  rs;    //[25:21]
+        logic [4:0]  rt;    //[20:16]
+        logic [15:0] imm;   //[15:0]    Rd is [15:11] when imm isnt used
+    } instr_t;
 
 endpackage
