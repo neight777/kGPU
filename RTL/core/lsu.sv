@@ -6,11 +6,11 @@ module lsu(
     input logic ready,
     output logic done,
 
-    //combinational register file reads, held stable while ready
-    input logic [15:0] rs_data,     //store data
-    input logic [15:0] rt_data,     //memory address
+    //combinational register file reads
+    input logic [15:0] rs_data,     
+    input logic [15:0] rt_data,     
 
-    //load writeback, register address is decoded rs
+    //load writeback
     output logic reg_we,
     output logic [15:0] reg_wdata
 );

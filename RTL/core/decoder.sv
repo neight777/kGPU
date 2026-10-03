@@ -18,7 +18,7 @@ import kpgu_pkg::*;
     //to warps
     output logic decoded_is_branch,
     output logic decoded_is_ret,
-    output logic [15:0] decoded_branch_target,
+    output logic [15:0] decoded_branch_target
 );
 
 instr_t instruction;

@@ -5,10 +5,10 @@ module registerfile #(
     input logic clk,
     input logic reset,
 
-    //selects which warp's registers are read and written
+    //warp # registers select
     input logic [WARP_BITS-1:0] warp_id,
 
-    //load registers for new block/warp, one bit per warp
+    //load registers for new block
     input logic [NUM_WARPS-1:0] launch,
     input logic [15:0] blockDimx,
     input logic [15:0] blockIDx,
@@ -45,7 +45,7 @@ always_ff @(posedge clk) begin
             end
         end
     end else begin
-        //single issue, so LSU and writeback never happen in the same cycle
+        //single issue LSU and wb never overlap
         if (lsu_we) begin
             registers[warp_id][lsu_addr] <= lsu_wdata;
         end

@@ -1,7 +1,8 @@
 module memorycontroller #(
     parameter NUM_CONSUMERS = 4,
     parameter DATA_WIDTH = 16,
-    parameter ADDR_BITS = 16
+    parameter ADDR_BITS = 16,
+    localparam IDX_BITS = NUM_CONSUMERS > 1 ? $clog2(NUM_CONSUMERS) : 1
 )(
     input logic clk,
     input logic reset,
@@ -17,7 +18,7 @@ module memorycontroller #(
 
 typedef enum logic [1:0] {IDLE, WAIT, DONE} state_t;
 state_t state;
-logic [$clog2(NUM_CONSUMERS)-1:0] current;
+logic [IDX_BITS-1:0] current;
 logic [DATA_WIDTH-1:0] rdata;
 
 logic [NUM_CONSUMERS-1:0] c_valid;
@@ -48,7 +49,7 @@ always_ff @(posedge clk) begin
             IDLE: begin
                 for (int i = NUM_CONSUMERS-1; i >= 0; i--) begin
                     if (c_valid[i]) begin
-                        current <= i[$clog2(NUM_CONSUMERS)-1:0];
+                        current <= IDX_BITS'(i);
                         mem_we <= c_we[i];
                         mem_addr <= c_addr[i];
                         mem_wdata <= c_wdata[i];
