@@ -4,7 +4,7 @@ kGPU is a very simplistic SIMT GPU architecture. It is built in system verilog a
 
 kGPU supports executing arbitrary kernels via cocotb in python. There are currently 2 kernels in gpu_testbench.py, one that does not branch and one that diverges.
 
-<img title="" src="/images/kGPU.png" alt="Alt Text" style="display: block; margin-left: auto; margin-right: auto;" />
+![Alt text](images/kGPU.png)
 
 # Description
 
@@ -25,3 +25,25 @@ For me python was the go to language for verification of functionality. I liked 
 The RTL &rarr; GDSII pipeline was satisfied by [librelane](https://github.com/librelane/librelane). This includes [yosys](https://github.com/yosyshq/yosys) for gate-level netlist synthesis, [OpenROAD](https://github.com/The-OpenROAD-Project/OpenROAD) for PnR, [Magic](https://opencircuitdesign.com/magic/) and [KLayout](https://www.klayout.de/) for physical verification, and [Netgen](https://opencircuitdesign.com/netgen/) for netlist comparison. The specs were kept to 1 SM, 2 warps, and 8 threads per warp to keep the PPA within reasonable limits for a personal project.  
 
 # Architecture
+
+kGPU is built bottom up as **GPU → Dispatcher → SM → Warps/Lanes**. Everything is parameterized, so the same RTL can scale from my small synthesied config up to something closer to a real part.
+
+## Instruction Set
+
+kGPU uses a fixed 32-bit instruction width. The below tables describes all operations:
+
+| $\textsf{\color{white}Opcode}$ | $\textsf{\color{white}Function}$                                                                                                   | $\textsf{\color{white}Structure}$                                                                                                                         |
+|:------------------------------:|:----------------------------------------------------------------------------------------------------------------------------------:|:---------------------------------------------------------------------------------------------------------------------------------------------------------:|
+| $\textsf{\color{white}NOP}$    | $\textsf{\color{white}PC = PC + 1}$                                                                                                | $\textsf{\color{white}000000}$ $\textsf{\color{gray}xxxxx}$ $\textsf{\color{gray}xxxxx}$ $\textsf{\color{gray}xxxxxxxxxxxxxxxx}$                          |
+| $\textsf{\color{white}ADD}$    | $\textsf{\color{red}Rd}$ $\textsf{\color{white}=}$ $\textsf{\color{teal}Rs}$ $\textsf{\color{white}+}$ $\textsf{\color{yellow}Rt}$ | $\textsf{\color{white}000001}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{yellow}ttttt}$ $\textsf{\color{red}ddddd}$ $\textsf{\color{gray}xxxxxxxxxxx}$ |
+| $\textsf{\color{white}SUB}$    | $\textsf{\color{red}Rd}$ $\textsf{\color{white}=}$ $\textsf{\color{teal}Rs}$ $\textsf{\color{white}-}$ $\textsf{\color{yellow}Rt}$ | $\textsf{\color{white}000010}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{yellow}ttttt}$ $\textsf{\color{red}ddddd}$ $\textsf{\color{gray}xxxxxxxxxxx}$ |
+| $\textsf{\color{white}MUL}$    | $\textsf{\color{red}Rd}$ $\textsf{\color{white}=}$ $\textsf{\color{teal}Rs}$ $\textsf{\color{white}*}$ $\textsf{\color{yellow}Rt}$ | $\textsf{\color{white}000011}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{yellow}ttttt}$ $\textsf{\color{red}ddddd}$ $\textsf{\color{gray}xxxxxxxxxxx}$ |
+| $\textsf{\color{white}DIV}$    | $\textsf{\color{red}Rd}$ $\textsf{\color{white}=}$ $\textsf{\color{teal}Rs}$ $\textsf{\color{white}/}$ $\textsf{\color{yellow}Rt}$ | $\textsf{\color{white}000100}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{yellow}ttttt}$ $\textsf{\color{red}ddddd}$ $\textsf{\color{gray}xxxxxxxxxxx}$ |
+| $\textsf{\color{white}STR}$    | $\textsf{\color{white}Mem[\color{yellow}Rt\color{white}] = \color{teal}Rs}$                                                        | $\textsf{\color{white}000101}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{yellow}ttttt}$  $\textsf{\color{gray}xxxxxxxxxxxxxxxx}$                       |
+| $\textsf{\color{white}LDR}$    | $\textsf{\color{teal}Rs\color{white} =\color{white} Mem[\color{yellow}Rt\color{white}]}$                                           | $\textsf{\color{white}000110}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{yellow}ttttt}$  $\textsf{\color{gray}xxxxxxxxxxxxxxxx}$                       |
+| $\textsf{\color{white}RET}$    | $\textsf{\color{gray}finished}$                                                                                                    | $\textsf{\color{white}000111}$ $\textsf{\color{gray}xxxxxxxxxxxxxxxxxxxxxxxxxx}$                                                                          |
+| $\textsf{\color{white}MOV}$    | $\textsf{\color{teal}Rs \color{white}= \color{orange}IMM16}$                                                                       | $\textsf{\color{white}001000}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{gray}xxxxx}$  $\textsf{\color{orange}iiiiiiiiiiiiiiii}$                       |
+| $\textsf{\color{white}BEQ}$    | $\textsf{\color{teal}Rs \color{white}== \color{yellow}Rt \color{white} → PC = \color{orange}IMM16}$                                | $\textsf{\color{white}001001}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{yellow}ttttt}$  $\textsf{\color{orange}iiiiiiiiiiiiiiii}$                     |
+| $\textsf{\color{white}BNE}$    | $\textsf{\color{teal}Rs \color{white}!= \color{yellow}Rt \color{white} → PC = \color{orange}IMM16}$                                | $\textsf{\color{white}001010}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{yellow}ttttt}$  $\textsf{\color{orange}iiiiiiiiiiiiiiii}$                     |
+| $\textsf{\color{white}BLT}$    | $\textsf{\color{teal}Rs \color{white}< \color{yellow}Rt \color{white} → PC = \color{orange}IMM16}$                                 | $\textsf{\color{white}001011}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{yellow}ttttt}$  $\textsf{\color{orange}iiiiiiiiiiiiiiii}$                     |
+| $\textsf{\color{white}B}$      | $\textsf{\color{white}PC = \color{orange}IMM16}$                                                                                   | $\textsf{\color{white}001100}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{gray}xxxxx}$  $\textsf{\color{orange}iiiiiiiiiiiiiiii}$                       |
