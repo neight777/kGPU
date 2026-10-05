@@ -4,11 +4,7 @@ kGPU is a very simplistic SIMT GPU architecture. It is built in system verilog a
 
 kGPU supports executing arbitrary kernels via cocotb in python. There are currently 2 kernels in gpu_testbench.py, one that does not branch and one that diverges.
 
-
-
-<div align="center">
-  ![kGPU GDS](/images/kGPU.png)
-</div>
+<img title="" src="/images/kGPU.png" alt="Alt Text" style="display: block; margin-left: auto; margin-right: auto;" />
 
 # Description
 
