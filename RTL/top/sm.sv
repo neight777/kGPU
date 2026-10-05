@@ -14,21 +14,11 @@ module sm #(
     input logic [WARP_SIZE-1:0] thread_enable,
     input logic [15:0] blockDimx,
     input logic [15:0] blockIDx,
-    output logic done,
 
-    //instruction memory
-    output logic imem_valid,
-    output logic [PC_BITS-1:0] imem_addr,
-    input logic [31:0] imem_rdata,
-    input logic imem_ready,
-
-    //data memory
-    output logic dmem_valid,
-    output logic dmem_we,
-    output logic [15:0] dmem_addr,
-    output logic [15:0] dmem_wdata,
-    input logic [15:0] dmem_rdata,
-    input logic dmem_ready
+    //to adn from gpu top level
+    output logic [NUM_WARPS-1:0] warp_done,
+    memchannelinterface.requester imem,
+    memchannelinterface.requester dmem [WARP_SIZE]
 );
 
 //control
@@ -41,7 +31,6 @@ logic commit;
 //warps
 logic [PC_BITS-1:0] warp_pc [NUM_WARPS];
 logic [WARP_SIZE-1:0] exec_mask [NUM_WARPS];
-logic [NUM_WARPS-1:0] warp_done;
 logic [NUM_WARPS-1:0] launch_vec;
 
 //lanes
@@ -65,7 +54,6 @@ logic dec_is_branch;
 logic dec_is_ret;
 
 assign launch_vec = launch ? (NUM_WARPS'(1) << launch_warp) : '0;
-assign done = &warp_done;
 
 controlunit #(.WARP_SIZE(WARP_SIZE), .NUM_WARPS(NUM_WARPS)) u_control (
     .clk, 
@@ -79,9 +67,6 @@ controlunit #(.WARP_SIZE(WARP_SIZE), .NUM_WARPS(NUM_WARPS)) u_control (
     .lane_done
 );
 
-//instruction memory one fetcher
-memchannelinterface #(.ADDR_BITS(PC_BITS), .DATA_BITS(32)) imem_ch [1] ();
-
 fetcher #(.PC_BITS(PC_BITS)) u_fetcher (
     .clk, 
     .reset,
@@ -89,19 +74,7 @@ fetcher #(.PC_BITS(PC_BITS)) u_fetcher (
     .pc(warp_pc[warp_id]),
     .instruction,
     .fetch_done,
-    .mem(imem_ch[0])
-);
-
-memorycontroller #(.NUM_CONSUMERS(1), .DATA_WIDTH(32), .ADDR_BITS(PC_BITS)) u_imem_ctrl (
-    .clk, 
-    .reset,
-    .consumers(imem_ch),
-    .mem_valid(imem_valid),
-    .mem_we(),
-    .mem_addr(imem_addr),
-    .mem_wdata(),
-    .mem_rdata(imem_rdata),
-    .mem_ready(imem_ready)
+    .mem(imem)
 );
 
 decoder u_decoder (
@@ -140,9 +113,6 @@ for (genvar w = 0; w < NUM_WARPS; w++) begin : warps
     );
 end
 
-//data memory one LSU per lane
-memchannelinterface #(.ADDR_BITS(16), .DATA_BITS(16)) dmem_ch [WARP_SIZE] ();
-
 for (genvar l = 0; l < WARP_SIZE; l++) begin : lanes
     lane #(.NUM_WARPS(NUM_WARPS), .LANE_ID(l)) u_lane (
         .clk, 
@@ -165,20 +135,8 @@ for (genvar l = 0; l < WARP_SIZE; l++) begin : lanes
         .launch(launch_vec),
         .blockDimx,
         .blockIDx,
-        .mem(dmem_ch[l])
+        .mem(dmem[l])
     );
 end
-
-memorycontroller #(.NUM_CONSUMERS(WARP_SIZE), .DATA_WIDTH(16), .ADDR_BITS(16)) u_dmem_ctrl (
-    .clk, 
-    .reset,
-    .consumers(dmem_ch),
-    .mem_valid(dmem_valid),
-    .mem_we(dmem_we),
-    .mem_addr(dmem_addr),
-    .mem_wdata(dmem_wdata),
-    .mem_rdata(dmem_rdata),
-    .mem_ready(dmem_ready)
-);
 
 endmodule

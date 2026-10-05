@@ -32,7 +32,9 @@ assign any_live = !(&warp_done);
 always_comb begin
     next_warp = warp_id;
     for (int k = NUM_WARPS; k >= 1; k--) begin
-        int w;
+        //Yosys gets mad without automatic
+        //each iter gets temp variable
+        automatic int w;
         w = (int'(warp_id) + k) % NUM_WARPS;
         if (!warp_done[w]) begin
             next_warp = WARP_BITS'(w);

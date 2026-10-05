@@ -20,7 +20,7 @@ always_comb begin
             ALU_out = operand_A * operand_B;
         end
         DIV: begin
-            ALU_out = $signed(operand_A) / $signed(operand_B);
+            ALU_out = '0;
         end
         default: begin
             ALU_out = '0;

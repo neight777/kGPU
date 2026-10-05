@@ -1,0 +1,21 @@
+DESIGN_NAME: gpu
+VERILOG_FILES:
+  - dir::../RTL/pkg/types.sv
+  - dir::../RTL/memory/memchannelinterface.sv
+  - dir::../RTL/memory/memorycontroller.sv
+  - dir::../RTL/core/ALU.sv
+  - dir::../RTL/core/controlunit.sv
+  - dir::../RTL/core/decoder.sv
+  - dir::../RTL/core/fetcher.sv
+  - dir::../RTL/core/lane.sv
+  - dir::../RTL/core/lsu.sv
+  - dir::../RTL/core/registerfile.sv
+  - dir::../RTL/core/warp.sv
+  - dir::../RTL/top/dispatcher.sv
+  - dir::../RTL/top/sm.sv
+  - dir::../RTL/top/gpu.sv
+USE_SLANG: true
+CLOCK_PORT: clk
+CLOCK_PERIOD: 120
+PDK: sky130A
+FP_CORE_UTIL: 40

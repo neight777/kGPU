@@ -11,8 +11,9 @@ NOP, ADD, SUB, MUL, DIV, STR, LDR, RET, MOV, BEQ, BNE, BLT, B = range(13)
  r16, r17, r18, r19, r20, r21, r22, r23,
  r24, r25, r26, r27, r28, r29, r30, r31) = range(32)
 
-NUM_WARPS = 4
-WARP_SIZE = 32
+NUM_WARPS = 2
+WARP_SIZE = 8
+NUM_BLOCKS = 16 # more blocks than warp slots, so the dispatcher reuses slots
 IN_BASE = 256  # input array lives at mem[256 + gid]
 
 # instr_t: [31:26] op  [25:21] rs  [20:16] rt  [15:0] imm (rd in [15:11])
@@ -24,17 +25,37 @@ def mov(rd, imm):          return enc(MOV, rd, 0, imm)   # MOV keeps rd in the r
 def ldr(rd, raddr):        return enc(LDR, rd, raddr)    # rd = mem[raddr]
 def strw(rdata, raddr):    return enc(STR, rdata, raddr) # mem[raddr] = rdata
 def ret():                 return enc(RET)
+def beq(rs, rt, target):   return enc(BEQ, rs, rt, target) # jmp if rs == rt
+def bne(rs, rt, target):   return enc(BNE, rs, rt, target) # jmp if rs != rt
+def blt(rs, rt, target):   return enc(BLT, rs, rt, target) # jmp if rs < rt (signed)
+def b(target):             return enc(B, 0, 0, target)     # always jmp
 
+#regular kernel
+# KERNEL = [
+#     mov(r1, 5),              # r1 = 5
+#     mov(r7, IN_BASE),        # r7 = 256
+#     alu(MUL, r3, r30, r31),  # r3 = blockIdx * blockDim
+#     alu(ADD, r4, r3, r29),   # r4 = blockIdx * blockDim + threadIdx = gid
+#     alu(ADD, r6, r4, r7),    # r6 = 256 + gid
+#     ldr(r5, r6),             # r5 = in[gid]
+#     alu(ADD, r2, r5, r1),    # r2 = in[gid] + 5
+#     strw(r2, r4),            # out[gid] = r2
+#     ret(),
+# ]
+
+#diverging kernel
 KERNEL = [
-    mov(r1, 5),              # r1 = 5
-    mov(r7, IN_BASE),        # r7 = 256
+    alu(ADD, r1, r29, r0),   # r1 = threadIdx 
+    mov(r2, 1),              # r2 = 1
+    mov(r6, 0),              # r6 = 0
+    beq(r1, r0, 7),          # if threadIdx == 0 skip loop
+    alu(SUB, r1, r1, r2),    # r1 = r1 - 1
+    alu(ADD, r6, r6, r2),    #r6 = r6 + 1
+    bne(r1, r0, 4),          # JMP back to loop
     alu(MUL, r3, r30, r31),  # r3 = blockIdx * blockDim
     alu(ADD, r4, r3, r29),   # r4 = blockIdx * blockDim + threadIdx = gid
-    alu(ADD, r6, r4, r7),    # r6 = 256 + gid
-    ldr(r5, r6),             # r5 = in[gid]
-    alu(ADD, r2, r5, r1),    # r2 = in[gid] + 5
-    strw(r2, r4),            # out[gid] = r2
-    ret(),
+    strw(r6, r4),            # out[gid] = r6
+    ret()
 ]
 
 async def memory_model(clk, valid, we, addr, wdata, rdata, ready, mem, width_mask):
@@ -54,51 +75,47 @@ async def memory_model(clk, valid, we, addr, wdata, rdata, ready, mem, width_mas
 
 
 @cocotb.test()
-async def sm_first_kernel(dut):
+async def sm_test_kernel(dut):
     cocotb.start_soon(Clock(dut.clk, 10, unit="ns").start())
 
     imem = {pc: word for pc, word in enumerate(KERNEL)}
     dmem = {}
-    for gid in range(NUM_WARPS * WARP_SIZE):
-        dmem[IN_BASE + gid] = gid * 3
+    # for gid in range(NUM_WARPS * WARP_SIZE):
+    #     dmem[IN_BASE + gid] = gid * 3
 
     cocotb.start_soon(memory_model(dut.clk, dut.imem_valid, None, dut.imem_addr, None, dut.imem_rdata, dut.imem_ready, imem, 0xFFFFFFFF))
     cocotb.start_soon(memory_model(dut.clk, dut.dmem_valid, dut.dmem_we, dut.dmem_addr, dut.dmem_wdata, dut.dmem_rdata, dut.dmem_ready, dmem, 0xFFFF))
 
     dut.reset.value = 1
-    dut.launch.value = 0
-    dut.launch_warp.value = 0
+    dut.start.value = 0
     dut.start_pc.value = 0
-    dut.thread_enable.value = 0
+    dut.num_blocks.value = 0
     dut.blockDimx.value = 0
-    dut.blockIDx.value = 0
     await ClockCycles(dut.clk, 3)
     await FallingEdge(dut.clk)
     dut.reset.value = 0
 
-    # one block per warp slot
-    for w in range(NUM_WARPS):
-        await FallingEdge(dut.clk)
-        dut.launch.value = 1
-        dut.launch_warp.value = w
-        dut.start_pc.value = 0
-        dut.thread_enable.value = (1 << WARP_SIZE) - 1
-        dut.blockDimx.value = WARP_SIZE
-        dut.blockIDx.value = w
+    # describe the kernel, the dispatcher hands blocks to free warp slots
     await FallingEdge(dut.clk)
-    dut.launch.value = 0
+    dut.start_pc.value = 0
+    dut.num_blocks.value = NUM_BLOCKS
+    dut.blockDimx.value = WARP_SIZE
+    dut.start.value = 1
+    await FallingEdge(dut.clk)
+    dut.start.value = 0
 
-    for cycle in range(50000):
+    for cycle in range(200000):
         await RisingEdge(dut.clk)
-        if int(dut.done.value):
+        if int(dut.kernel_done.value):
             break
     else:
-        assert False, "kernel did not finish in 50000 cycles"
+        assert False, "kernel did not finish in 200000 cycles"
     dut._log.info(f"kernel finished after {cycle} cycles")
 
     errors = []
-    for gid in range(NUM_WARPS * WARP_SIZE):
-        expected = (gid * 3 + 5) & 0xFFFF
+    for gid in range(NUM_BLOCKS * WARP_SIZE):
+        #expected = (gid * 3 + 5) & 0xFFFF
+        expected = (gid % WARP_SIZE) & 0xFFFF
         got = dmem.get(gid)
         if got != expected:
             errors.append(f"out[{gid}] expected {expected}, got {got}")
