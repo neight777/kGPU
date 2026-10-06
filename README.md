@@ -12,9 +12,42 @@ There are a few good resources out there for learning the architecture of GPUs b
 
 ## Tooling/Workflow
 
-### Simulator
+### Simulation
 
 The majority of the project is dominated by SystemVerilog and Verilator. I chose Verilator as the compiler due to its simple 2 state simulator design (0, 1) rather than four states (0, 1, X, Z). I had no use for the extra Unknown, and High Impedance values so I opted for the less strict 2 state simulator. 
+
+To run the simulation install dependencies:
+
+```sh
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get install git help2man perl python3 make autoconf g++ flex bison ccache libgoogle-perftools-dev libjemalloc-dev numactl perl-doc libfl2 libfl-dev zlibc zlib1g zlib1g-dev liblz4 liblz4-dev   
+```
+
+Clone and build Verilator:
+
+```sh
+git clone https://github.com/verilator/verilator
+cd verilator
+unset VERILATOR_ROOT
+autoconf
+./configure
+make -j `nproc`
+sudo make install
+```
+
+Then install cocotb:
+
+```sh
+pip install cocotb
+```
+
+And finally run the simulation
+
+```sh
+cd kGPU/Testbenches/
+make
+```
 
 ### Verification
 
@@ -122,3 +155,60 @@ Each lane also has its own Load/Store Unit to communicate to and from global mem
 ### Memory
 
 Instruction memory and data memory are separated. Instruction memory is 32 bits wide due to the 32 bit instruction and has 16 bits of addresses. Data memory is 16 bits wide and also has 16 bits of addresses. They exist in the python testbench and are what the memory controller communicates to from the simulation. They are connected through `memchannelinterface` . The instruction memory serves 1 fetcher per SM while the data memory serves `NUM_SMS` \* `WARP_SIZE` requesters. 
+
+# Kernels
+
+The first kernel is a proof of concept kernel that always converges. It takes the gid of the current thread, multiplies it by 3, and then adds 5 to it and stores it in the global memory address of its thread past the input block:
+
+`add_const.asm`
+
+```asm
+.blocks 16
+.threads 8
+.data @256 0 3 6 9 ...         ; input array, in[gid] = gid * 3
+
+MOV R1, #5                     ; constant to add
+MOV R7, #256                   ; IN_BASE (input array base address)
+
+MUL R3, %blockIdx, %blockDim
+ADD R4, R3, %threadIdx         ; gid = blockIdx * blockDim + threadIdx
+
+ADD R6, R4, R7                 ; addr(in[gid]) = IN_BASE + gid
+LDR R5, R6                     ; load in[gid] from global memory
+
+ADD R2, R5, R1                 ; out = in[gid] + 5
+STR R2, R4                     ; store out[gid] in global memory
+
+RET                            ; end of kernel
+```
+
+`add_const output`
+
+[add_const results](Testbenches/add_const_results.md)
+
+`diverge.asm`
+
+```asm
+.blocks 16
+.threads 8
+
+ADD R1, %threadIdx, R0         ; counter = threadIdx (R0 is always 0)
+MOV R2, #1                     ; increment
+MOV R6, #0                     ; acc = 0
+
+BEQ R1, R0, DONE               ; thread 0 skips the loop
+
+LOOP:
+  SUB R1, R1, R2               ; decrement counter
+  ADD R6, R6, R2               ; increment acc
+  BNE R1, R0, LOOP             ; loop while counter != 0, threads diverge here
+
+DONE:                          ; all threads reconverge here
+MUL R3, %blockIdx, %blockDim
+ADD R4, R3, %threadIdx         ; gid = blockIdx * blockDim + threadIdx
+STR R6, R4                     ; store out[gid] = threadIdx in global memory
+
+RET                            ; end of kernel
+```
+
+[diverge results](Testbenches/diverge_results.md)
