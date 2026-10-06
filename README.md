@@ -27,6 +27,8 @@ kGPU supports executing arbitrary kernels via cocotb in python. There are curren
 - [Kernels](#kernels)
     - [add_const](#add_const)
     - [diverge](#diverge)
+- [Future Works](#future-works)
+- [Credits](#credits)
 
 
 # Description
