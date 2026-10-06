@@ -6,6 +6,29 @@ kGPU supports executing arbitrary kernels via cocotb in python. There are curren
 
 ![Alt text](images/kGPU.png)
 
+### Table of Contents
+
+- [Description](#description)
+  - [Tooling/Workflow](#toolingworkflow)
+    - [Simulation](#simulation)
+    - [Verification](#verification)
+    - [Synthesis](#synthesis)
+- [Architecture](#architecture)
+  - [Instruction Set](#instruction-set)
+  - [Hardware](#hardware)
+    - [Dispatcher](#dispatcher)
+    - [Streaming Multiprocessor (SM)](#streaming-multiprocessor-sm)
+    - [Warp Scheduler](#warp-scheduler)
+    - [Warps and Branch Reconvergence](#warps-and-branch-reconvergence)
+    - [Lanes](#lanes)
+    - [Register File](#register-file)
+    - [Load/Store Unit](#loadstore-unit)
+    - [Memory](#memory)
+- [Kernels](#kernels)
+    - [add_const](#add_const)
+    - [diverge](#diverge)
+
+
 # Description
 
 There are a few good resources out there for learning the architecture of GPUs but very few for the goal I was trying to reach. I wanted to try and cover some modern abstraction while keeping the SM simple and lightweight. Here is a run through of the architecture of the GPU and all of the details that went in to it
@@ -160,6 +183,8 @@ Instruction memory and data memory are separated. Instruction memory is 32 bits 
 
 The first kernel is a proof of concept kernel that always converges. It takes the gid of the current thread, multiplies it by 3, and then adds 5 to it and stores it in the global memory address of its thread past the input block:
 
+### add_const
+
 `add_const.asm`
 
 ```asm
@@ -185,28 +210,32 @@ RET                            ; end of kernel
 `add_const output`
 
 <!-- add_const_results -->
+
 add_const: 16 blocks x 8 threads finished in 2099 cycles
 
-| block |  t0 |  t1 |  t2 |  t3 |  t4 |  t5 |  t6 |  t7 | result |
-|------:|----:|----:|----:|----:|----:|----:|----:|----:|:------:|
-|     0 |   5 |   8 |  11 |  14 |  17 |  20 |  23 |  26 |  PASS  |
-|     1 |  29 |  32 |  35 |  38 |  41 |  44 |  47 |  50 |  PASS  |
-|     2 |  53 |  56 |  59 |  62 |  65 |  68 |  71 |  74 |  PASS  |
-|     3 |  77 |  80 |  83 |  86 |  89 |  92 |  95 |  98 |  PASS  |
-|     4 | 101 | 104 | 107 | 110 | 113 | 116 | 119 | 122 |  PASS  |
-|     5 | 125 | 128 | 131 | 134 | 137 | 140 | 143 | 146 |  PASS  |
-|     6 | 149 | 152 | 155 | 158 | 161 | 164 | 167 | 170 |  PASS  |
-|     7 | 173 | 176 | 179 | 182 | 185 | 188 | 191 | 194 |  PASS  |
-|     8 | 197 | 200 | 203 | 206 | 209 | 212 | 215 | 218 |  PASS  |
-|     9 | 221 | 224 | 227 | 230 | 233 | 236 | 239 | 242 |  PASS  |
-|    10 | 245 | 248 | 251 | 254 | 257 | 260 | 263 | 266 |  PASS  |
-|    11 | 269 | 272 | 275 | 278 | 281 | 284 | 287 | 290 |  PASS  |
-|    12 | 293 | 296 | 299 | 302 | 305 | 308 | 311 | 314 |  PASS  |
-|    13 | 317 | 320 | 323 | 326 | 329 | 332 | 335 | 338 |  PASS  |
-|    14 | 341 | 344 | 347 | 350 | 353 | 356 | 359 | 362 |  PASS  |
-|    15 | 365 | 368 | 371 | 374 | 377 | 380 | 383 | 386 |  PASS  |
+| block | t0  | t1  | t2  | t3  | t4  | t5  | t6  | t7  | result |
+| -----:| ---:| ---:| ---:| ---:| ---:| ---:| ---:| ---:|:------:|
+| 0     | 5   | 8   | 11  | 14  | 17  | 20  | 23  | 26  | PASS   |
+| 1     | 29  | 32  | 35  | 38  | 41  | 44  | 47  | 50  | PASS   |
+| 2     | 53  | 56  | 59  | 62  | 65  | 68  | 71  | 74  | PASS   |
+| 3     | 77  | 80  | 83  | 86  | 89  | 92  | 95  | 98  | PASS   |
+| 4     | 101 | 104 | 107 | 110 | 113 | 116 | 119 | 122 | PASS   |
+| 5     | 125 | 128 | 131 | 134 | 137 | 140 | 143 | 146 | PASS   |
+| 6     | 149 | 152 | 155 | 158 | 161 | 164 | 167 | 170 | PASS   |
+| 7     | 173 | 176 | 179 | 182 | 185 | 188 | 191 | 194 | PASS   |
+| 8     | 197 | 200 | 203 | 206 | 209 | 212 | 215 | 218 | PASS   |
+| 9     | 221 | 224 | 227 | 230 | 233 | 236 | 239 | 242 | PASS   |
+| 10    | 245 | 248 | 251 | 254 | 257 | 260 | 263 | 266 | PASS   |
+| 11    | 269 | 272 | 275 | 278 | 281 | 284 | 287 | 290 | PASS   |
+| 12    | 293 | 296 | 299 | 302 | 305 | 308 | 311 | 314 | PASS   |
+| 13    | 317 | 320 | 323 | 326 | 329 | 332 | 335 | 338 | PASS   |
+| 14    | 341 | 344 | 347 | 350 | 353 | 356 | 359 | 362 | PASS   |
+| 15    | 365 | 368 | 371 | 374 | 377 | 380 | 383 | 386 | PASS   |
 
 128/128 outputs correct
+
+### diverge
+
 <!-- /add_const_results -->
 
 `diverge.asm`
@@ -235,26 +264,28 @@ RET                            ; end of kernel
 ```
 
 <!-- diverge_results -->
+
 diverge: 16 blocks x 8 threads finished in 4579 cycles
 
-| block |  t0 |  t1 |  t2 |  t3 |  t4 |  t5 |  t6 |  t7 | result |
-|------:|----:|----:|----:|----:|----:|----:|----:|----:|:------:|
-|     0 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|     1 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|     2 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|     3 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|     4 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|     5 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|     6 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|     7 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|     8 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|     9 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|    10 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|    11 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|    12 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|    13 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|    14 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
-|    15 |   0 |   1 |   2 |   3 |   4 |   5 |   6 |   7 |  PASS  |
+| block | t0  | t1  | t2  | t3  | t4  | t5  | t6  | t7  | result |
+| -----:| ---:| ---:| ---:| ---:| ---:| ---:| ---:| ---:|:------:|
+| 0     | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 1     | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 2     | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 3     | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 4     | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 5     | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 6     | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 7     | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 8     | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 9     | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 10    | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 11    | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 12    | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 13    | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 14    | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
+| 15    | 0   | 1   | 2   | 3   | 4   | 5   | 6   | 7   | PASS   |
 
 128/128 outputs correct
+
 <!-- /diverge_results -->
