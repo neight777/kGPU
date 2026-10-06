@@ -1,6 +1,6 @@
 # kGPU
 
-kGPU is a very simplistic SIMT GPU architecture. It is built in system verilog and synthesized through the [librelane](https://github.com/librelane/librelane) synthesis flow. kGPU comes fully featured with a warp scheduler for maximum throughput and supports branch reconvergence.
+kGPU is a very simplistic SIMT GPU architecture. It is built in system verilog and synthesized through the [librelane](https://github.com/librelane/librelane) synthesis flow. kGPU comes fully featured with a warp scheduler to interleave warps and supports branch reconvergence.
 
 kGPU supports executing arbitrary kernels via cocotb in python. There are currently 2 kernels in gpu_testbench.py, one that does not branch and one that diverges.
 
@@ -47,3 +47,78 @@ kGPU uses a fixed 32-bit instruction width. The below tables describes all opera
 | $\textsf{\color{white}BNE}$    | $\textsf{\color{teal}Rs \color{white}!= \color{yellow}Rt \color{white} → PC = \color{orange}IMM16}$                                | $\textsf{\color{white}001010}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{yellow}ttttt}$  $\textsf{\color{orange}iiiiiiiiiiiiiiii}$                     |
 | $\textsf{\color{white}BLT}$    | $\textsf{\color{teal}Rs \color{white}< \color{yellow}Rt \color{white} → PC = \color{orange}IMM16}$                                 | $\textsf{\color{white}001011}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{yellow}ttttt}$  $\textsf{\color{orange}iiiiiiiiiiiiiiii}$                     |
 | $\textsf{\color{white}B}$      | $\textsf{\color{white}PC = \color{orange}IMM16}$                                                                                   | $\textsf{\color{white}001100}$ $\textsf{\color{teal}sssss}$ $\textsf{\color{gray}xxxxx}$  $\textsf{\color{orange}iiiiiiiiiiiiiiii}$                       |
+
+Opcodes are 6 bits wide, Registers are 5 bits wide and the immediate is 16 bits wide as illustrated in the table. When there is an instruction with no immediate, Rd takes the slot from bit 15 down to 11.
+
+ADD → Computes the addition of register Rs and Rt and stores it in register Rd.
+
+SUB → Computes the subtraction of register Rt from Rs and stores it in register Rd.
+
+MUL → Computes the product of register Rs and Rt and stores it in register Rd.
+
+DIV → NON FUNCTIONAL. Removed due to massive synthesis issues (WIP).
+
+NOP → Do nothing and increment PC.
+
+STR → Store Rs in to the global memory address in Rt.
+
+LDR → Load Rs with the data from global memory address Rt.
+
+RET → Kernel has reached the end of its instructions.
+
+MOV → Load register Rs with IMM16
+
+BEQ → Update PC to IMM16 if Rs == Rt.
+
+BNE → Update PC to IMM16 if Rs != Rt.
+
+BLT → Update PC to IMM16 if Rs < Rt.
+
+B → Update PC to IMM16 unconditionally.
+
+## Hardware
+
+<p float="left">
+  <img src="/images/kgpu_diagram.png" alt="GPU" width="48%">
+  <img src="/images/kgpu_sm.png" alt="Core" width="48%">
+</p>
+
+### Dispatcher
+
+The dispatcher glues the testbench and the SMs together. The testbench provides the dispatcher with a PC, number of blocks, and `blockDimx` then pulses `start`. The dispatcher looks for the lowest free warp slots across all the SMs and launches the next block in to it. One block maps to one warp now so `blockDimx` cannot exceed the size of the warp (32 threads). The excess are masked off via `thread_enable`. Once every SM reports it is finished kernel execution is stopped via `kernel_done` being raised. 
+
+### Streaming Multiprocessor (SM)
+
+The SM is the most essential part of the design. It instantiates a fetcher, decoder, and a control unit that is common between all of its warps. The SM is multicycled instead of pipelined for simplicity reasons but in the future I plan on pipelining the SM to keep execution cycles low and efficient.
+
+### Warp Scheduler
+
+The warp scheduler is bundled with the `controlunit` and picks the next warp based on the ones that are already finished. If a warp has already finished its execution it will be skipped. 
+
+### Warps and Branch Reconvergence
+
+Each warp has 32 threads which each have their own program counter. This is to combat branch divergence. The warp only executes the lowest PC threads so they can catch up to the threads that are further along so that all threads equalize their PCs again and merge back together. This reconvergence requires no reconvergence stack, however one downside of this crude approach (waiting for diverging PCs) is that if a thread loops, the entire warp has to wait for the thread. 
+
+### Lanes
+
+A lane is essentially a datapath for a thread. It gets its own Register File, ALU, and LSU. All of the lanes get the same decoded instruction however only the active ones (not masked off) write back. The lane evaluates any branch condition and sends it back to the warp so it can update the thread's PC accordingly.
+
+### Register File
+
+Each lane has a single 32 registers  x 16 bit register file. The register file comes preloaded with 3 values:
+
+| Register | Value         |
+| -------- | ------------- |
+| `r31`    | `blockDim.x`  |
+| `r30`    | `blockIdx.x`  |
+| `r29`    | `threadIdx.x` |
+
+These allow the kernel to compute the global index for the thread, the same way it would in CUDA.
+
+### Load/Store Unit
+
+Each lane also has its own Load/Store Unit to communicate to and from global memory. This means that each thread can issue its own memory. The SM stays in the WAIT state until every active lane's LSU finishes execution.
+
+### Memory
+
+Instruction memory and data memory are separated. Instruction memory is 32 bits wide due to the 32 bit instruction and has 16 bits of addresses. Data memory is 16 bits wide and also has 16 bits of addresses. They exist in the python testbench and are what the memory controller communicates to from the simulation. They are connected through `memchannelinterface` . The instruction memory serves 1 fetcher per SM while the data memory serves `NUM_SMS` \* `WARP_SIZE` requesters. 
