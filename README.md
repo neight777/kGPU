@@ -289,3 +289,17 @@ diverge: 16 blocks x 8 threads finished in 4579 cycles
 128/128 outputs correct
 
 <!-- /diverge_results -->
+
+# Future Works
+
+This project was extremely fun to work on and isn't finished yet.
+Future works include: Adding division so there are no timing violations 
+and it can be synthesized, add functionality for warps to execute while others are waiting for memory to reduce cycles, fix small antenna errors when synthesizing, create a tensor core to optimize matrix multiplications for AI applications, add ports to be able to tapeout the design on a MWP, and add more instructions to support something like a Special Functions unit.
+
+# Credits
+These repos were very helpful to me when designing and understanding the architecture of SIMD and SIMT GPUs:
+[SIMT_GPU-Core](https://github.com/aritramanna/SIMT-GPU-Core)
+[tiny-gpu](https://github.com/adam-maj/tiny-gpu)
+[miaow](https://github.com/VerticalResearchGroup/miaow)
+[VeriGPU](https://github.com/hughperkins/VeriGPU/tree/main)
+General-Purpose Graphics Processor Architectures by Fung, Aamodt and Rogers
